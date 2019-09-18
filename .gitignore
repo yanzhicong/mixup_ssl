@@ -1,0 +1,6 @@
+data*
+test_data*
+*__pycache__*
+.vscode*
+test*
+cifar10*
