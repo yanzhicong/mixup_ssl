@@ -56,6 +56,7 @@ class Plotter(object):
 
         for name, data_frame in self._scalar_data_frame_dict.items():
             csv_filepath = os.path.join(output_dir, 'scalar_'+name+'.csv')
+            print(csv_filepath)
             data_frame.to_csv(csv_filepath, index=False)
         for name, data_frame in self._dist_data_frame_dict.items():
             csv_filepath = os.path.join(output_dir, 'dist_'+name+'.csv')

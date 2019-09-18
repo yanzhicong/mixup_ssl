@@ -4,3 +4,4 @@ test_data*
 .vscode*
 test*
 cifar10*
+experiments*
