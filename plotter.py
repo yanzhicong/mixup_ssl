@@ -11,10 +11,6 @@ from yattag import indent
 
 
 
-
-
-
-
 class Plotter(object):
     def __init__(self):
         self._scalar_data_frame_dict = {}
