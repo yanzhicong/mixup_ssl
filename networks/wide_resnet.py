@@ -48,7 +48,7 @@ class wide_basic(nn.Module):
 
 class Wide_ResNet(nn.Module):
     
-    def __init__(self, depth, widen_factor,dropout_rate, num_classes):
+    def __init__(self, depth, widen_factor, dropout_rate, num_classes):
         super(Wide_ResNet, self).__init__()
         self.in_planes = 16
 
@@ -128,8 +128,8 @@ class Wide_ResNet(nn.Module):
             out = out.view(out.size(0), -1)
             out = self.linear(out)
             return out
-        
-    
+
+
 def WRN28_10(num_classes=10, dropout = 0.0):
     model = Wide_ResNet(depth=28, widen_factor=10, dropout_rate = dropout, num_classes=num_classes)
     return model
@@ -141,5 +141,4 @@ def WRN28_2(num_classes=10, dropout = 0.0):
 if __name__ == '__main__':
     net=Wide_ResNet(28, 10, 0.3, 10)
     y = net(Variable(torch.randn(1,3,32,32)))
-
     print(y.size())

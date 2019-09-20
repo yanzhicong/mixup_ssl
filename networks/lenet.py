@@ -46,7 +46,7 @@ class CNN13(nn.Module):
         
         self.fc1 =  weight_norm(nn.Linear(128, num_classes))
         
-    def forward(self, x, target=None, mixup_hidden = False,  mixup_alpha = 0.1, layers_mix=None, ext_feature=False):
+    def forward(self, x, target=None, mixup_hidden=False,  mixup_alpha=0.1, layers_mix=None, ext_feature=False):
         if mixup_hidden == True:
             layer_mix = random.randint(0,layers_mix)
         
@@ -97,12 +97,14 @@ class CNN13(nn.Module):
             out = self.activation(out)
             out = self.ap3(out)
             out = out.view(-1, 128)
-            out = self.fc1(out)
-            
-            # lam = torch.tensor(lam).cuda()
-            # lam = lam.repeat(y_a.size())
 
-            return out, y_a, y_b, lam
+
+            if ext_feature:
+                return out, y_a, y_b, lam
+            else:
+                out = self.fc1(out)
+                return out, y_a, y_b, lam
+
         
         else:
             out = x
@@ -172,7 +174,7 @@ class CNN13(nn.Module):
                 
         
 
-def cnn13(num_classes=10, dropout = 0.0):
+def cnn13(num_classes=10, dropout=0.0):
     model = CNN13(num_classes = num_classes, dropout=dropout)
     return model
 

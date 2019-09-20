@@ -23,24 +23,28 @@ from utils import *
 from label_propagation_utils import *
 from criterion import *
 
-from networks.wide_resnet import *
-from networks.lenet import *
+
+from networks import *
+# from networks.wide_resnet import *
+# from networks.lenet import *
 
 from plotter import *
 
 parser = argparse.ArgumentParser(description='Deep Semi-supervised Learning with Mixup Regularization and Label Propagation')
 parser.add_argument('--dataset', metavar='DATASET', default='cifar10',
-						choices=['cifar10', 'cifar100', 'svhn'],
-						help='dataset: cifar10, cifar100 or svhn' )
+						choices=['cifar10', 'cifar100', 'svhn', 'mini-imagenet'],
+						help='dataset: cifar10, cifar100, svhn or mini-imagenet' )
+parser.add_argument('--data_dir', type = str, default = 'data/cifar10/',
+						help='folder where data is stored')
+
 parser.add_argument('--num_labeled', default=100, type=int, metavar='L',
 					help='number of labeled samples per class')
 
 parser.add_argument('--num_valid_samples', default=500, type=int, metavar='V',
 					help='number of validation samples per class')
 
-parser.add_argument('--arch', default='cnn13', type=str, help='either of cnn13, WRN28_2 , cifar_shakeshake26')
-parser.add_argument('--dropout', default=0.0, type=float,
-					metavar='DO', help='dropout rate')
+parser.add_argument('--arch', default='cnn13', type=str, help='either of cnn13, WRN28_2, cifar_shakeshake26, resnet18')
+parser.add_argument('--dropout', default=0.0, type=float, metavar='DO', help='dropout rate')
 
 parser.add_argument('--sl', action='store_true', default=False,
 					help='only supervised learning: no use of unlabeled data')
@@ -83,9 +87,9 @@ parser.add_argument('--loss_lambda', default=10.0, type=float,
 					help='consistency coeff for mixup usup loss')
 
 
-parser.add_argument('--consistency_rampup_starts', default=0, type=int, metavar='EPOCHS',
+parser.add_argument('--lambda_rps', default=30, type=int, metavar='EPOCHS',
 					help='epoch at which consistency loss ramp-up starts')
-parser.add_argument('--consistency_rampup_ends', default=100, type=int, metavar='EPOCHS',
+parser.add_argument('--lambda_rpe', default=30, type=int, metavar='EPOCHS',
 					help='lepoch at which consistency loss ramp-up ends')
 
 parser.add_argument('--mixup_sup_alpha', default=0.2, type=float,
@@ -119,12 +123,11 @@ parser.add_argument('--pretrained', dest='pretrained', action='store_true',
 					help='use pre-trained model')
 parser.add_argument('--root_dir', type = str, default = 'experiments',
 						help='folder where results are to be stored')
-parser.add_argument('--data_dir', type = str, default = 'data/cifar10/',
-						help='folder where data is stored')
+
 parser.add_argument('--n_cpus', default=0, type=int,
 					help='number of cpus for data loading')
 
-parser.add_argument('--job_id', type=str, default='lp_test_mm')
+parser.add_argument('--job_id', type=str, default=None)
 
 
 args = parser.parse_args()
@@ -135,15 +138,18 @@ use_cuda = torch.cuda.is_available()
 best_prec1 = 0
 global_step = 0
 
-##get number of updates etc#####
+# ##get number of updates etc#####
 
-if args.dataset in ['cifar10', 'cifar100']:
-	len_data = args.num_labeled
-	num_updates = int((50000/args.batch_size))*args.epochs 
-elif args.dataset == 'svhn':
-	len_data = args.num_labeled
-	num_updates = int((73250/args.batch_size)+1)*args.epochs 
-print ('number of updates', num_updates)
+# if args.dataset in ['cifar10', 'cifar100']:
+# 	len_data = args.num_labeled
+# 	num_updates = int((50000/args.batch_size))*args.epochs 
+# elif args.dataset == 'svhn':
+# 	len_data = args.num_labeled
+# 	num_updates = int((73250/args.batch_size)+1)*args.epochs 
+# elif args.dataset == 'mini-imagenet':
+# 	len_data = args.num_labeled
+# 	num_updates = int((50000/args.batch_size))*args.epochs 
+# print ('number of updates', num_updates)
 
 
 dataset = SSLDataset(1, args.batch_size, args.n_cpus, args.dataset, args.data_dir,
@@ -165,6 +171,8 @@ def getNetwork(args, num_classes, ema= False):
 		model_factory = architectures.__dict__[args.arch]
 		model_params = dict(pretrained=args.pretrained, num_classes=num_classes)
 		net = model_factory(**model_params)
+	elif args.arch in ['resnet18']:
+		net = resnet18(pretrained=args.pretrained,num_classes=num_classes, dropout_rate=args.dropout)
 	else:
 		print('Error : Network should be either [cnn13/ WRN28_2 / cifar_shakeshake26')
 		sys.exit(0)
@@ -185,17 +193,17 @@ def experiment_name(args):
 	exp_name += '_l' + str(args.num_labeled)
 	exp_name += '_u' + str(args.num_valid_samples)
 	
-	exp_name += '_arch'+ str(args.arch)
+	exp_name += '_a'+ str(args.arch)
 	
 	exp_name += '_lr'+str(args.lr)
-	exp_name += '_init_lr'+ str(args.initial_lr)
+	# exp_name += '_init_lr'+ str(args.initial_lr)
 	exp_name += '_rup'+ str(args.lr_rampup)
 	exp_name += '_rdn'+ str(args.lr_rampdown_epochs)
 	
-	exp_name += '_emad'+ str(args.ema_decay)
-	exp_name += '_mcons'+ str(args.loss_lambda)
-	exp_name += '_ramp'+ str(args.consistency_rampup_starts)
-	exp_name += '_'+ str(args.consistency_rampup_ends)
+	# exp_name += '_emad'+ str(args.ema_decay)
+	exp_name += '_lam'+ str(args.loss_lambda)
+	# exp_name += '_ramp'+ str(args.lambda_rps)
+	# exp_name += '_'+ str(args.lambda_rpe)
 
 	exp_name += '_lpa'+str(args.lp_alpha)
 	exp_name += '_lpn'+str(args.lp_n)
@@ -207,7 +215,7 @@ def experiment_name(args):
 	if args.mixup_sup_alpha:
 		exp_name += '_msa'+str(args.mixup_sup_alpha)
 	if args.mixup_usup_alpha:
-		exp_name += '_m_usup_a'+str(args.mixup_usup_alpha)
+		exp_name += '_musa'+str(args.mixup_usup_alpha)
 	if args.mixup_hidden:
 		exp_name += 'm_hidden'
 		exp_name += str(args.num_mix_layer)
@@ -222,9 +230,6 @@ def experiment_name(args):
 	# exp_name += strftime("_%Y-%m-%d_%H:%M:%S", gmtime())
 	print('experiement name: ' + exp_name)
 	return exp_name
-
-
-
 
 
 
@@ -291,33 +296,44 @@ def main():
 			start_time = time.time()
 
 			print_and_write("Evaluating the primary model on validation set:", filep)
-			prec1 = validate(dataset, model, global_step, epoch + 1, filep, plotter)
-
+			cls_loss, prec1 = validate(dataset, model, global_step, epoch + 1, filep, plotter)
 			print_and_write("Evaluating the EMA model on validation set:", filep)
-			ema_prec1 = validate(dataset, ema_model, global_step, epoch + 1, filep, plotter, ema=True)
-
+			ema_cls_loss, ema_prec1 = validate(dataset, ema_model, global_step, epoch + 1, filep, plotter, ema=True)
 			print_and_write("--- validation in %s seconds ---\n" % (time.time() - start_time), filep)
 
-			# if args.pseudo_label == 'single':
-			# 	is_best = prec1 > best_prec1
-			# 	best_prec1 = max(prec1, best_prec1)
-			# else:
+			plotter.scalar('eval_acc_top1', epoch,	{
+				'model' : prec1,
+				'ema_model' : ema_prec1
+			})
+			plotter.scalar('eval_loss', epoch,	{
+				'model' : cls_loss,
+				'ema_model' : ema_cls_loss
+			})
+
 			is_best = ema_prec1 > best_prec1
 			best_prec1 = max(ema_prec1, best_prec1)
 
 			if is_best:
 				start_time = time.time()
 				print_and_write("Evaluating the primary model on test set:", filep)
-				best_test_prec1 = validate(dataset, model, global_step, epoch + 1, filep, plotter, testing=True)
+				test_cls_loss, best_test_prec1 = validate(dataset, model, global_step, epoch + 1, filep, plotter, testing=True)
 				print_and_write("Evaluating the EMA model on test set:", filep)
-				best_test_ema_prec1 = validate(dataset, ema_model, global_step, epoch + 1, filep, plotter, ema=True, testing=True)
+				test_ema_cls_loss, best_test_ema_prec1 = validate(dataset, ema_model, global_step, epoch + 1, filep, plotter, ema=True, testing=True)
 				print_and_write("--- testing in %s seconds ---\n" % (time.time() - start_time), filep)
 
+				plotter.scalar('test_acc_top1', epoch,	{
+					'model' : best_test_prec1,
+					'ema_model' : best_test_ema_prec1
+				})
+				plotter.scalar('test_loss', epoch,	{
+					'model' : test_cls_loss,
+					'ema_model' : test_ema_cls_loss
+				})
 		else:
 			is_best = False
 		
-		print_and_write("Test error on the model with best validation error %s\n" % (best_test_prec1), filep)
-		print_and_write("Test error on the model with best validation error %s\n" % (best_test_ema_prec1), filep)
+		print_and_write("Test acc on the model with best validation acc %s\n" % (best_test_prec1), filep)
+		print_and_write("Test acc on the ema model with best validation acc %s\n" % (best_test_ema_prec1), filep)
 		
 		if args.checkpoint_epochs and (epoch + 1) % args.checkpoint_epochs == 0:
 			save_checkpoint({
@@ -337,6 +353,8 @@ def main():
 
 
 
+
+
 def train_ssl(dataset, model, ema_model, optimizer, epoch, filep, exp_dir, plotter, ssl=True, lp=True):
 	global global_step
 	
@@ -345,11 +363,11 @@ def train_ssl(dataset, model, ema_model, optimizer, epoch, filep, exp_dir, plott
 
 	meters = AverageMeterSet()
 
-	if epoch == 0 or epoch < args.consistency_rampup_starts:
+	if epoch == 0 or epoch < args.lambda_rps:
 		# in the start, set the pesudo label and weight all to zero
 		dataset.set_pesudo_label(np.zeros([dataset.total_size, 4]))
 
-	elif (ssl and lp) or epoch == args.consistency_rampup_starts:
+	elif (ssl and lp) or epoch == args.lambda_rps:
 		# extract features from model and ema_model
 		model.eval()
 		ema_model.eval()
@@ -379,17 +397,17 @@ def train_ssl(dataset, model, ema_model, optimizer, epoch, filep, exp_dir, plott
 		acc1, wacc1 = eval_pesudo_label_acc(Y.astype(np.int32), W, dataset.label_all, filep)
 		acc2, wacc2 = eval_pesudo_label_acc(Y2.astype(np.int32), W2, dataset.label_all, filep)
 
-		plotter.scalar('plabel_acc', epoch, acc1)
-		plotter.scalar('plabel_weighted_acc', epoch, wacc1)
-		plotter.scalar('plabel_acc_ema', epoch, acc2)
-		plotter.scalar('plabel_weighted_acc_ema', epoch, wacc2)
+		plotter.scalar('plabel', epoch, {
+			'model_acc' : acc1,
+			'ema_model_acc' : acc2,
+			'weighted_model_acc' : wacc1,
+			'weighted_ema_model_acc' : wacc2,
+		})
 
 		# set pesudo label
 		dataset.set_pesudo_label(np.concatenate([
-				Y[:, np.newaxis], 
-				W[:, np.newaxis],
-				Y2[:, np.newaxis], 
-				W2[:, np.newaxis]
+				Y[:, np.newaxis], W[:, np.newaxis],
+				Y2[:, np.newaxis], W2[:, np.newaxis]
 				], axis=1))
 
 	# switch to train mode
@@ -421,13 +439,12 @@ def train_ssl(dataset, model, ema_model, optimizer, epoch, filep, exp_dir, plott
 			# use label propagation by features generated from the ema_model
 			pesudo_label = utarget[:, 3:5]
 
-
 		if args.dataset == 'cifar10':
 			input = apply_zca(input, zca_mean, zca_components)
 			uinput = apply_zca(uinput, zca_mean, zca_components) 
 
 		lr = adjust_learning_rate(optimizer, epoch, i, dataset.len_ssl)
-		meters.update('lr', optimizer.param_groups[0]['lr'])
+		meters.update('lr', lr)
 		
 		# calculate supervised loss
 		if args.mixup_sup_alpha >= 1e-5:
@@ -472,7 +489,6 @@ def train_ssl(dataset, model, ema_model, optimizer, epoch, filep, exp_dir, plott
 		ema_class_logit = ema_model(input_var)
 		ema_class_loss = class_criterion(ema_class_logit, target_var)# / minibatch_size
 		
-
 		# calculate unsupervised loss
 		if args.loss_lambda and ssl:
 			if args.mixup_hidden:
@@ -490,7 +506,7 @@ def train_ssl(dataset, model, ema_model, optimizer, epoch, filep, exp_dir, plott
 			unsu_loss = mixup_criterion_unsu(class_criterion2, output_mixed_u, target_a_var, target_b_var, lam, weight_a_var, weight_b_var)
 			meters.update('unsu_loss', unsu_loss.item())
 
-			if epoch < args.consistency_rampup_starts:
+			if epoch < args.lambda_rps:
 				unsupervised_loss_weight = 0.0
 			else:
 				unsupervised_loss_weight = get_current_consistency_weight(args.loss_lambda, epoch, i, dataset.len_ssl)
@@ -501,6 +517,7 @@ def train_ssl(dataset, model, ema_model, optimizer, epoch, filep, exp_dir, plott
 		else:
 			unsu_loss = 0
 			meters.update('unsu_loss', 0)
+			meters.update('unsu_loss_weight', 0)
 
 		if ssl:
 			loss = su_loss + unsu_loss
@@ -537,14 +554,13 @@ def train_ssl(dataset, model, ema_model, optimizer, epoch, filep, exp_dir, plott
 
 		if i % args.print_freq == 0:
 			print_and_write(
-				'Epoch: [{0}][{1}/{2}]\t'
-				'Time {meters[batch_time]:.3f}\t'
-				'Data {meters[data_time]:.3f}\t'
-				'Class {meters[su_loss]:.4f}\t'
-				# 'Class2 {meters[class_loss2]:.4f}\t'
-				'Mixup Cons {meters[unsu_loss]:.4f}\t'
-				'Prec@1 {meters[top1]:.3f}\t'
-				'Prec@5 {meters[top5]:.3f}'.format(
+				('Epoch: [{0}][{1}/{2}]\t'
+				+ 'Time {meters[batch_time]:.3f}\t'
+				+ 'Data {meters[data_time]:.3f}\t' 
+				+ 'ClassSu {meters[su_loss]:.4f}\t'
+				+ ('ClassUnsu {meters[unsu_loss]:.4f}\t' if ssl else '')
+				+ 'Prec@1 {meters[top1]:.3f}\t'
+				+ 'Prec@5 {meters[top5]:.3f}').format(
 					epoch, i, dataset.len_ssl, meters=meters), filep)
 
 
@@ -552,12 +568,16 @@ def train_ssl(dataset, model, ema_model, optimizer, epoch, filep, exp_dir, plott
 	plotter.dist2('train_unsu_loss', epoch, meters['unsu_loss'].record)
 	plotter.dist2('train_loss', epoch, meters['loss'].record)
 
-	plotter.scalar('train_error_top1', epoch, meters['error1'].avg)
-	plotter.scalar('train_error_top5', epoch, meters['error5'].avg)
-	plotter.scalar('train_ema_error_top1', epoch, meters['ema_error1'].avg)
-	plotter.scalar('train_ema_error_top5', epoch, meters['ema_error5'].avg)
+	plotter.scalar('train_error_top1', epoch,	{
+		'model' : meters['error1'].avg,
+		'ema_model' : meters['ema_error1'].avg
+	})
+	plotter.scalar('train_error_top5', epoch, {
+		'model' : meters['error5'].avg,
+		'ema_model' : meters['ema_error5'].avg
+	})
 
-	plotter.dist2('learning_rate', epoch, meters['lr'].record)
+	plotter.scalar('learning_rate', epoch, meters['lr'].avg)
 	plotter.dist2('unsu_loss_weight', epoch, meters['unsu_loss_weight'].record)
 
 
@@ -586,7 +606,6 @@ def validate(dataset, model, global_step, epoch, filep, plotter, ema=False, test
 		with torch.no_grad():
 			if len(target.size()) > 1:
 				target = target[:, 0]
-			# target_var = torch.autograd.Variable(target.cuda(async=True))
 			target_var = torch.autograd.Variable(target.long().cuda())
 
 		minibatch_size = len(target_var)
@@ -614,17 +633,7 @@ def validate(dataset, model, global_step, epoch, filep, plotter, ema=False, test
 	print_and_write(' * Prec@1 {top1.avg:.3f}\tPrec@5 {top5.avg:.3f}'
 		  .format(top1=meters['top1'], top5=meters['top5']), filep)
 	
-	if testing == False:
-		# pass
-		if ema:
-			plotter.scalar('test_ema_class_loss', epoch, meters['class_loss'].avg)
-			plotter.scalar('test_ema_error_top1', epoch, meters['error1'].avg)
-		else:
-			plotter.scalar('test_class_loss', epoch, meters['class_loss'].avg)
-			plotter.scalar('test_error_top1', epoch, meters['error1'].avg)
-
-	
-	return meters['top1'].avg
+	return meters['class_loss'].avg, meters['top1'].avg
 
 
 def save_checkpoint(state, is_best, dirpath, epoch):
@@ -673,9 +682,9 @@ def adjust_learning_rate_step(optimizer, epoch, gammas, schedule):
 
 def get_current_consistency_weight(final_consistency_weight, epoch, step_in_epoch, total_steps_in_epoch):
 	# Consistency ramp-up from https://arxiv.org/abs/1610.02242
-	epoch = epoch - args.consistency_rampup_starts
+	epoch = epoch - args.lambda_rps
 	epoch = epoch + step_in_epoch / total_steps_in_epoch
-	return final_consistency_weight * ramps.sigmoid_rampup(epoch, args.consistency_rampup_ends - args.consistency_rampup_starts )
+	return final_consistency_weight * ramps.sigmoid_rampup(epoch, args.lambda_rpe - args.lambda_rps )
 
 if __name__ == '__main__':
 	main()

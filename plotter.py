@@ -2,6 +2,10 @@ import os
 import sys
 import numpy as np
 import pandas as pd
+
+import matplotlib
+matplotlib.use("Agg")
+
 import matplotlib.pyplot as plt
 import seaborn
 import csv
@@ -18,10 +22,21 @@ class Plotter(object):
 
 
 	def scalar(self, name, step, value, epoch=None):
-		if epoch is not None:
-			df = pd.DataFrame({'epoch' : epoch, 'step' : step, name : value, }, index=[0])
+		if isinstance(value, dict):
+			data = value.copy()
+			data.update({
+				'step' : step
+			})
 		else:
-			df = pd.DataFrame({'step' : step, name : value, }, index=[0])
+			data = {
+				'step' : step,
+				name : value,
+			}
+		
+		if epoch is not None:
+			data['epoch'] = epoch
+				
+		df = pd.DataFrame(data, index=[0])
 
 		if name not in self._scalar_data_frame_dict:
 			self._scalar_data_frame_dict[name] = df
@@ -47,6 +62,7 @@ class Plotter(object):
 
 
 	def to_csv(self, output_dir):
+		" 将记录保存到多个csv文件里面，csv文件放在output_dir下面。"
 		if not os.path.exists(output_dir):
 			os.mkdir(output_dir)
 
@@ -58,20 +74,30 @@ class Plotter(object):
 			data_frame.to_csv(csv_filepath, index=False)
 
 	def from_csv(self, output_dir):
+		" 从output_dir下面的csv文件里面读取并恢复记录 "
 		csv_name_list = [fn.split('.')[0] for fn in os.listdir(output_dir) if fn.endswith('csv')]
 		for name in csv_name_list:
 			if name.startswith('scalar_'):
-				self._scalar_data_frame_dict[name[len('scalar_'):]] = pd.read_csv(os.path.join(output_dir, name+'.csv'))
+				in_csv = pd.read_csv(os.path.join(output_dir, name+'.csv'))
+				self._scalar_data_frame_dict[name[len('scalar_'):]] = in_csv
+
 			elif name.startswith('dist_'):
 				self._dist_data_frame_dict[name[len('dist_'):]] = pd.read_csv(os.path.join(output_dir, name+'.csv'))
 
 
 	def write_svg_all(self, output_dir):
+		" 将所有记录绘制成svg图片 "
 		for ind, (name, data_frame) in enumerate(self._scalar_data_frame_dict.items()):
 			output_svg_filepath = os.path.join(output_dir, name+'.svg')
 			plt.figure()
 			plt.clf()
-			plt.plot(data_frame['step'], data_frame[name])
+			headers = [hd for hd in data_frame.columns if hd not in ['step', 'epoch']]
+			if len(headers) == 1:
+				plt.plot(data_frame['step'], data_frame[name])
+			else:
+				for hd in headers:
+					plt.plot(data_frame['step'], data_frame[hd])
+				plt.legend(headers)
 			plt.tight_layout()
 			plt.savefig(output_svg_filepath)
 			plt.close()
@@ -87,6 +113,7 @@ class Plotter(object):
 
 
 	def to_html_report(self, output_filepath):
+		" 将所有记录整理成一个html报告 "
 		self.write_svg_all(os.path.dirname(output_filepath))
 		doc, tag, text = Doc().tagtext()
 		with open(output_filepath, 'w') as outfile:
@@ -165,6 +192,8 @@ if __name__ == "__main__":
 
 
 	p.from_csv('./experiments/main/a/plot_output')
+	# print(p._scalar_data_frame_dict.headers)
 	p.to_html_report('./experiments/main/a/plot_output/output.html')
+
 	# p.to_csv('./test_csv_output2')
 
