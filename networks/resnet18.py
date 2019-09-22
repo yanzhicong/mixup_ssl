@@ -42,11 +42,11 @@ from torchvision.models.resnet import model_urls, BasicBlock, ResNet
 class ResNetWrapper(ResNet):
 
 	def __init__(self, block, layers, num_classes=100, zero_init_residual=False, dropout_rate=0.5):
-		super(ResNetWrapper, self).__init__(block, layers, num_classes=num_classes, zero_init_residual=zero_init_residual)
+		super(ResNetWrapper, self).__init__(block, layers, num_classes=128, zero_init_residual=zero_init_residual)
 		
-		self.dropout = nn.Dropout(dropout_rate)
+		# self.dropout = nn.Dropout(dropout_rate)
 		self.activation = nn.LeakyReLU(0.1)
-		self.fc2 = weight_norm(nn.Linear(1000, num_classes))
+		self.fc2 = weight_norm(nn.Linear(128, num_classes))
 
 
 	def forward(self, x, target=None, mixup_hidden=False,  mixup_alpha=0.1, layers_mix=None, ext_feature=False):
@@ -87,7 +87,7 @@ class ResNetWrapper(ResNet):
 			if ext_feature:
 				return out, y_a, y_b, lam
 			else:
-				out = self.dropout(out)
+				# out = self.dropout(out)
 				out = self.activation(out)
 				out = self.fc2(out)
 				return out, y_a, y_b, lam
@@ -111,7 +111,7 @@ class ResNetWrapper(ResNet):
 			if ext_feature:
 				return out
 			else:
-				out = self.dropout(out)
+				# out = self.dropout(out)
 				out = self.activation(out)
 				out = self.fc2(out)
 				return out
@@ -121,10 +121,6 @@ class ResNetWrapper2(ResNet):
 
 	def __init__(self, block, layers, num_classes=100, zero_init_residual=False, dropout_rate=0.5):
 		super(ResNetWrapper2, self).__init__(block, layers, num_classes=num_classes, zero_init_residual=zero_init_residual)
-		
-		# self.dropout = nn.Dropout(dropout_rate)
-		# self.activation = nn.LeakyReLU(0.1)
-		# self.fc2 = weight_norm(nn.Linear(1000, num_classes))
 
 
 	def forward(self, x, target=None, mixup_hidden=False,  mixup_alpha=0.1, layers_mix=None, ext_feature=False):
@@ -160,13 +156,10 @@ class ResNetWrapper2(ResNet):
 
 			out = self.avgpool(out)
 			out = out.view(out.size(0), -1)
-			# out = self.fc(out)
-
+	
 			if ext_feature:
 				return out, y_a, y_b, lam
 			else:
-				# out = self.dropout(out)
-				# out = self.activation(out)
 				out = self.fc(out)
 				return out, y_a, y_b, lam
 
@@ -184,13 +177,10 @@ class ResNetWrapper2(ResNet):
 			out = self.layer4(out)
 			out = self.avgpool(out)
 			out = out.view(out.size(0), -1)
-			# out = self.fc(out)
 			
 			if ext_feature:
 				return out
 			else:
-				# out = self.dropout(out)
-				# out = self.activation(out)
 				out = self.fc(out)
 				return out
 				
@@ -201,12 +191,18 @@ def resnet18(pretrained=True, num_classes=100, dropout_rate=0.0):
 	Args:
 		pretrained (bool): If True, returns a model pre-trained on ImageNet
 	"""
-	# model = ResNetWrapper(BasicBlock, [2, 2, 2, 2], num_classes=num_classes, dropout_rate=dropout_rate)
-	# if pretrained:
-	# 	model.load_state_dict(model_zoo.load_url(model_urls['resnet18']), strict=False)
-	# return model
 
-	model = ResNetWrapper2(BasicBlock, [2, 2, 2, 2], num_classes=num_classes, dropout_rate=dropout_rate)
+	# two fc layers
+	# feature from first fc layer
+	# and classification by second fc layer
+	model = ResNetWrapper(BasicBlock, [2, 2, 2, 2], num_classes=num_classes, dropout_rate=dropout_rate)
+
+	# one fc layer
+	# feature from last conv layer
+	# and classification by fc layer
+	# model = ResNetWrapper2(BasicBlock, [2, 2, 2, 2], num_classes=num_classes, dropout_rate=dropout_rate)
+
+
 	if pretrained:
 		state_dict = model_zoo.load_url(model_urls['resnet18'])
 		del state_dict['fc.weight']

@@ -171,8 +171,6 @@ class CNN13(nn.Module):
             else:
                 out = self.fc1(out)
                 return out
-                
-        
 
 def cnn13(num_classes=10, dropout=0.0):
     model = CNN13(num_classes = num_classes, dropout=dropout)
